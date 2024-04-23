@@ -1,0 +1,123 @@
+4.22版本
+<template>
+  <el-container>
+    <el-header class="header">
+    </el-header>
+    <el-main>
+      <el-row>
+        <el-col :span="8">
+          <h1 class="centered-title">yyyyy去哪玩</h1>
+          <h2 class="centered-title">与蓝心大模型70B聊天</h2>
+          <el-input
+              type="textarea"
+              v-model="message"
+              placeholder="在这里输入你的消息..."
+              class="chat-input">
+          </el-input>
+          <el-button type="primary" @click="sendMessage" class="send-button">发送</el-button>
+        </el-col>
+        <el-col :span="16">
+          <div class="message-container">
+            <div v-for="msg in messages" :key="msg.id" class="message-text">
+              {{ msg.content }}
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+    </el-main>
+  </el-container>
+</template>
+
+<script>
+import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
+
+// 设置axios的基础URL为你的后端服务器的地址
+axios.defaults.baseURL = 'http://localhost:28080';
+
+export default {
+  data() {
+    return {
+      message: '',
+      messages: [],
+      sessionId: uuidv4() // 在页面加载时生成一个唯一的sessionId
+    };
+  },
+  methods: {
+    sendMessage() {
+      if (!this.message.trim()) {
+        return; // 阻止发送空消息
+      }
+      const requestBody = {
+        content: this.message,
+        sessionId: this.sessionId // 包含sessionId
+      };
+      this.messages.push({
+        id: this.messages.length + 1,
+        content: this.message // 显示用户输入的内容
+      });
+      axios.post('/api/chat/send', requestBody)
+          .then(response => {
+            const responseData = response.data;
+            if (responseData && responseData.data && responseData.code === 0) {
+              this.messages.push({
+                id: this.messages.length + 1,
+                content: responseData.data.content // 显示从服务器返回的内容
+              });
+            } else {
+              console.error('接收到错误或格式无效:', responseData);
+            }
+          })
+          .catch(error => {
+            console.error('发送消息错误:', error);
+            this.messages.push({
+              id: this.messages.length + 1,
+              content: `错误：${error.message || "与服务器通信失败"}`
+            });
+          });
+      this.message = ''; // 发送后清空输入框
+    }
+  }
+}
+</script>
+
+<style scoped>
+.header {
+  text-align: left;
+}
+
+.centered-title {
+  text-align: center;
+  color: #3eaf7c;
+  font-size: 2em;
+  margin-bottom: 0.5em;
+}
+
+h2.centered-title {
+  color: #333;
+  font-size: 1.5em;
+  margin-bottom: 1em;
+}
+
+.send-button {
+  margin-top: 1em;
+  background-color: #3eaf7c;
+  color: white;
+}
+
+.chat-input {
+  font-size: 1.2em;
+  font-weight: bold; /* 加粗输入框的字体 */
+}
+
+.message-container {
+  display: flex;
+  flex-direction: column-reverse; /* 使新消息显示在下方 */
+  overflow-y: auto; /* 如果消息过多，显示滚动条 */
+  height: 300px; /* 设置一个固定高度 */
+}
+
+.message-text {
+  font-size: 1.2em;
+}
+</style>

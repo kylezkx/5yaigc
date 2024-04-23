@@ -1,0 +1,343 @@
+<template>
+  <el-container>
+    <el-header class="header">
+    </el-header>
+    <el-main>
+      <el-row>
+        <el-col :span="8">
+          <h1 class="centered-title">yyyyy去哪玩</h1>
+          <h2 class="centered-title">与蓝心大模型70B聊天</h2>
+          <el-input
+              type="textarea"
+              v-model="message"
+              placeholder="在这里输入你的消息..."
+              class="chat-input">
+          </el-input>
+          <el-button type="primary" @click="sendMessage" class="send-button">发送</el-button>
+        </el-col>
+        <el-col :span="16">
+          <div class="message-container">
+            <div v-for="msg in messages" :key="msg.id" class="message-text">
+              {{ msg.content }}
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+    </el-main>
+  </el-container>
+</template>
+
+<script>
+import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
+
+// 设置axios的基础URL为你的后端服务器的地址
+axios.defaults.baseURL = 'http://localhost:28080';
+
+export default {
+  data() {
+    return {
+      message: '',
+      messages: [],
+      sessionId: uuidv4() // 在页面加载时生成一个唯一的sessionId
+    };
+  },
+  methods: {
+    sendMessage() {
+      if (!this.message.trim()) {
+        return; // 阻止发送空消息
+      }
+      const requestBody = {
+        content: this.message,
+        sessionId: this.sessionId // 包含sessionId
+      };
+      this.messages.push({
+        id: this.messages.length + 1,
+        content: this.message // 显示用户输入的内容
+      });
+      axios.post('/api/chat/send', requestBody)
+          .then(response => {
+            const responseData = response.data;
+            if (responseData && responseData.data && responseData.code === 0) {
+              this.messages.push({
+                id: this.messages.length + 1,
+                content: responseData.data.content // 显示从服务器返回的内容
+              });
+            } else {
+              console.error('接收到错误或格式无效:', responseData);
+            }
+          })
+          .catch(error => {
+            console.error('发送消息错误:', error);
+            this.messages.push({
+              id: this.messages.length + 1,
+              content: `错误：${error.message || "与服务器通信失败"}`
+            });
+          });
+      this.message = ''; // 发送后清空输入框
+    }
+  }
+}
+</script>
+
+<style scoped>
+.header {
+  text-align: left;
+}
+
+.centered-title {
+  text-align: center;
+  color: #3eaf7c;
+  font-size: 2em;
+  margin-bottom: 0.5em;
+}
+
+h2.centered-title {
+  color: #333;
+  font-size: 1.5em;
+  margin-bottom: 1em;
+}
+
+.send-button {
+  margin-top: 1em;
+  background-color: #3eaf7c;
+  color: white;
+}
+
+.chat-input {
+  font-size: 1.2em;
+  font-weight: bold; /* 加粗输入框的字体 */
+}
+
+.message-container {
+  display: flex;
+  flex-direction: column-reverse; /* 使新消息显示在下方 */
+  overflow-y: auto; /* 如果消息过多，显示滚动条 */
+  height: 300px; /* 设置一个固定高度 */
+}
+
+.message-text {
+  font-size: 1.2em;
+}
+</style>
+src/
+└── main/
+    ├── java/
+    │   └── com/
+    │       └── example/
+    │           └── demo20230927/
+    │               ├── config/
+    │               │   └── WebClientConfig.java
+    │               ├── controller/
+    │               │   └── ChatController.java
+    │               ├── model/
+    │               │   └── ChatMessage.java
+    │               ├── util/
+    │               │   └── SignatureUtil.java
+    └── resources/
+        ├── application.yml
+        └── application-dev.yml
+3.1 ChatMessage 类
+定义聊天消息的数据结构，使用Lombok自动生成getter和setter。
+
+
+package com.example.demo20230927.model;
+
+import lombok.Data;
+import java.util.Map;
+
+@Data
+public class ChatMessage {
+    private String content;
+    private String sessionId;
+    private Map<String, String> queryParams;
+}
+3.2 WebClientConfig 类
+配置WebClient，为API调用设置基础URL和默认请求头。
+
+
+package com.example.demo20230927.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.web.reactive.function.client.WebClient;
+
+@Configuration
+public class WebClientConfig {
+    @Bean
+    public WebClient webClient() {
+        return WebClient.builder()
+            .baseUrl("http://api-ai.vivo.com.cn")
+            .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+            .build();
+    }
+}
+3.3 SignatureUtil 类
+生成API调用所需的认证头，确保安全通信。
+
+
+package com.example.demo20230927.util;
+
+import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import org.apache.commons.codec.binary.Base64;
+
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@Component
+public class SignatureUtil {
+
+    private static final Logger log = LoggerFactory.getLogger(SignatureUtil.class);
+
+    @Value("${api.bluelm.app-id}")
+    private String appId;
+
+    @Value("${api.bluelm.secret}")
+    private String appKey;
+
+    public Map<String, String> generateAuthHeaders(String method, String uri, Map<String, String> queryParams) {
+        String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
+        // timestamp = "1629255133";
+        String nonce = generateNonce(8);
+        // nonce = "le1qqjex" ;
+        String canonicalQueryString = genCanonicalQueryString(queryParams);
+        String signedHeadersString = String.format("x-ai-gateway-app-id:%s\nx-ai-gateway-timestamp:%s\nx-ai-gateway-nonce:%s", appId, timestamp, nonce);
+   System.out.println("===============");
+   System.out.println(signedHeadersString);
+        String signingString = buildSigningString(method, uri, canonicalQueryString, appId, timestamp, nonce, signedHeadersString);
+   System.out.println(signingString);
+        String signature = generateSignature(appKey, signingString);
+   System.out.println(signature);
+
+
+
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-AI-GATEWAY-APP-ID", appId);
+        headers.put("X-AI-GATEWAY-TIMESTAMP", timestamp);
+        headers.put("X-AI-GATEWAY-NONCE", nonce);
+        headers.put("X-AI-GATEWAY-SIGNED-HEADERS", "x-ai-gateway-app-id;x-ai-gateway-timestamp;x-ai-gateway-nonce");
+        headers.put("X-AI-GATEWAY-SIGNATURE", signature);
+
+        return headers;
+    }
+
+    private String generateNonce(int length) {
+        SecureRandom random = new SecureRandom();
+        byte[] nonceBytes = new byte[length];
+        random.nextBytes(nonceBytes);
+        return Base64.encodeBase64URLSafeString(nonceBytes);
+    }
+
+    private String genCanonicalQueryString(Map<String, String> queryParams) {
+        if (queryParams == null || queryParams.isEmpty()) {
+            return "";
+        }
+        return queryParams.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
+                .collect(Collectors.joining("&"));
+    }
+
+    private String encode(String data) {
+        try {
+            return URLEncoder.encode(data, StandardCharsets.UTF_8.toString());
+        } catch (UnsupportedEncodingException e) {
+            throw new RuntimeException("Error encoding parameter", e);
+        }
+    }
+
+    private String buildSigningString(String method, String uri, String canonicalQuery, String appId, String timestamp, String nonce, String signedHeaders) {
+        return String.join("\n", method, uri, canonicalQuery, appId, timestamp, signedHeaders);
+    }
+
+    private String generateSignature(String secret, String data) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(), "HmacSHA256"));
+            return Base64.encodeBase64String(mac.doFinal(data.getBytes()));
+        } catch (Exception e) {
+            log.error("Failed to calculate HMAC", e);
+            throw new RuntimeException("Failed to calculate HMAC", e);
+        }
+    }
+}
+3.4 ChatController 类
+接收聊天消息并调用外部API，处理HTTP请求。
+
+
+package com.example.demo20230927.controller;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/chat")
+public class ChatController {
+
+    private final WebClient webClient;
+    private final SignatureUtil signatureUtil;
+
+    @Autowired
+    public ChatController(WebClient webClient, SignatureUtil signatureUtil) {
+        this.webClient = webClient;
+        this.signatureUtil = signatureUtil;
+    }
+
+    @PostMapping("/send")
+    public Mono<ResponseEntity<String>> sendMessage(@RequestBody ChatMessage message) {
+        Map<String, String> queryParams = new HashMap<>();
+        queryParams.put("requestId", UUID.randomUUID().toString());  // 生成唯一的requestId
+        //queryParams.put("requestId", "1e344557-8e8b-43e3-a36e-94e7f36616e0");
+        // 创建一个MultiValueMap来存储转换后的参数
+        MultiValueMap<String, String> multiValueMap = new LinkedMultiValueMap<>();
+        queryParams.forEach((key, value) -> multiValueMap.add(key, value));
+
+        return webClient.post()
+                .uri(uriBuilder -> uriBuilder.path("/vivogpt/completions")
+                        .queryParams(multiValueMap)  // 使用MultiValueMap作为查询参数
+                        .build())
+                .headers(headers -> headers.setAll(signatureUtil.generateAuthHeaders("POST", "/vivogpt/completions", queryParams)))
+                .bodyValue(buildRequestBody(message))
+                .retrieve()
+                .bodyToMono(String.class)
+                .map(body -> ResponseEntity.ok().body(body))
+                .onErrorResume(e -> {
+                    e.printStackTrace();  // 在实际部署中应考虑更合适的错误处理方式
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error processing your request: " + e.getMessage()));
+                });
+    }
+
+    // 确保当构建JSON字符串时包括sessionId
+    private String buildRequestBody(ChatMessage message) {
+        return String.format("{\"prompt\": \"%s\", \"model\": \"vivo-BlueLM-TB\", \"sessionId\": \"%s\"}",
+                message.getContent(),
+                message.getSessionId()); // 使用传递的sessionId
+    }
+
+}
