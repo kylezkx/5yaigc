@@ -5,17 +5,23 @@
     </el-header>
     <el-main class="main-content">
       <el-row :gutter="20" class="top-row">
-        <el-col :span="8">
-          <h1 class="centered-title">查询POI</h1>
+        <el-col :span="6">
+          <h1 class="centered-title">选择起点</h1>
           <el-input
-            type="textarea"
-            v-model="message.content"
-            placeholder="输入关键词..."
+            v-model="startPoint"
+            placeholder="输入起点..."
             class="chat-input"
           ></el-input>
-          <el-button type="primary" @click="sendMessage" class="send-button">发送</el-button>
         </el-col>
-        <el-col :span="16">
+        <el-col :span="6">
+          <h1 class="centered-title">选择终点</h1>
+          <el-input
+            v-model="endPoint"
+            placeholder="输入终点..."
+            class="chat-input"
+          ></el-input>
+        </el-col>
+        <el-col :span="12">
           <el-table :data="poiData" style="width: 100%">
             <el-table-column prop="name" label="名称" width="120" />
             <el-table-column prop="address" label="地址" />
@@ -24,6 +30,14 @@
             <el-table-column prop="phone" label="电话" width="120" />
             <el-table-column prop="location" label="经纬度" width="120" />
           </el-table>
+        </el-col>
+      </el-row>
+      <el-row :gutter="20">
+        <el-col :span="8">
+          <el-button type="primary" @click="sendPoiRequest" class="send-button">查询POI</el-button>
+        </el-col>
+        <el-col :span="16">
+          <el-button type="primary" @click="loadMap" class="send-button">生成导航</el-button>
         </el-col>
       </el-row>
       <el-row :gutter="20">
@@ -39,8 +53,8 @@
 </template>
 
 <script>
+import Cookies from 'js-cookie';
 import axios from "axios";
-import Cookies from 'js-cookie'; // 用于获取 cookies
 import { v4 as uuidv4 } from "uuid";
 import utf8 from "utf8";
 import base64 from "base-64";
@@ -49,17 +63,11 @@ import CryptoJS from "crypto-js";
 export default {
   data() {
     return {
-      message: {
-        content: "",
-        queryParams: {
-          city: "北京",
-          page_num: 1,
-          page_size: 10,
-        },
-      },
-      poiData: [], // 存储 POI 数据
+      startPoint: "", // 用户输入的起点
+      endPoint: "",   // 用户输入的终点
+      poiData: [],    // 存储 POI 数据
       sessionId: uuidv4(), // 唯一会话 ID
-      selectedPois: [], // 存储选择的 POI
+      selectedPoi: null,   // 存储选择的途径点
     };
   },
   methods: {
@@ -67,48 +75,49 @@ export default {
       return new Promise((resolve, reject) => {
         const mapScriptId = "amap-script";
 
-        // 检查地图脚本是否已加载
         const existingScript = document.getElementById(mapScriptId);
         if (existingScript) {
           resolve(); // 地图脚本已加载
           return;
         }
 
-        // 加载安全性脚本
         const securityScript = document.createElement("script");
         securityScript.type = "text/javascript";
         securityScript.textContent = `
           window._AMapSecurityConfig = {
-            securityJsCode: "7ddbddda175331260d821e090ced568f", // 替换为您的安全密钥
+            securityJsCode: "7ddbddda175331260d821e090ced568f",
           };
         `;
         document.head.appendChild(securityScript);
 
-        // 加载地图脚本
         const mapScript = document.createElement("script");
         mapScript.id = mapScriptId;
-        mapScript.src = "https://webapi.amap.com/maps?v=2.0&key=13fa6788d2449d44f71d11f35e55d52a&plugin=AMap.Driving"; // 替换为您的地图 API 密钥
+        mapScript.src = "https://webapi.amap.com/maps?v=2.0&key=13fa6788d2449d44f71d11f35e55d52a&plugin=AMap.Driving";
         mapScript.onload = () => {
-          resolve(); // 地图脚本加载成功
+          resolve();
         };
         mapScript.onerror = (error) => {
-          reject(new Error("地图脚本加载失败")); // 地图脚本加载失败
+          reject(new Error("地图脚本加载失败"));
         };
 
-        document.head.appendChild(mapScript); // 添加地图脚本
+        document.head.appendChild(mapScript);
       });
     },
     
-    sendMessage() {
-      if (!this.message.content.trim()) {
-        console.error("发送内容为空");
+    sendPoiRequest() {
+      if (!this.startPoint.trim()) {
+        console.error("起点为空");
         return;
       }
 
       const requestBody = {
-        content: this.message.content,
+        content: this.startPoint,
         sessionId: this.sessionId,
-        queryParams: this.message.queryParams,
+        queryParams: {
+          city: "北京",
+          page_num: 1,
+          page_size: 10,
+        },
       };
 
       const headers = this.generateAuthHeaders("POST", "/api/chat/poi-search", {});
@@ -119,9 +128,7 @@ export default {
           const responseData = response.data;
           if (responseData && responseData.pois) {
             this.poiData = responseData.pois; // 更新表格数据
-            this.selectedPois = responseData.pois.slice(0, 2); // 存储前两个 POI
-
-            this.loadMap(); // 加载地图和路线
+            this.selectedPoi = responseData.pois[0]; // 选择第一个 POI 作为途径点
           } else {
             console.error("收到无效的响应:", responseData);
           }
@@ -129,19 +136,23 @@ export default {
         .catch((error) => {
           console.error("请求错误:", error);
         });
-
-      this.message.content = ""; // 清空输入框
     },
     
     loadMap() {
+      if (!this.startPoint.trim() || !this.endPoint.trim()) {
+        console.error("起点或终点为空");
+        return;
+      }
+
+      if (!this.selectedPoi) {
+        console.error("没有选择途径点");
+        return;
+      }
+
       this.ensureMapScriptLoaded().then(() => {
         const mapContainer = document.getElementById("map-container");
         const mapPanel = document.getElementById("map-panel");
-        
-        if (!this.selectedPois.length || !mapContainer) {
-          console.error("地图容器或 POI 数据不足");
-          return;
-        }
+
 
         if (typeof AMap === "undefined") {
           console.error("地图库未加载");
@@ -161,8 +172,9 @@ export default {
 
         driving.search(
           [
-            { keyword: this.selectedPois[0].name, city: this.selectedPois[0].city },
-            { keyword: this.selectedPois[1].name, city: this.selectedPois[1].city },
+            { keyword: this.startPoint, city: "北京" },
+            { keyword: this.selectedPoi.name, city: this.selectedPoi.city }, // 途径点
+            { keyword: this.endPoint, city: "北京" },
           ],
           (status, result) => {
             if (status === "complete") {
