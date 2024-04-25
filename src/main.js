@@ -6,6 +6,7 @@ import ElementUI from 'element-ui'
 
 import axios from 'axios'
 import 'element-ui/lib/theme-chalk/index.css'
+
 axios.defaults.baseURL = 'http://localhost:28080';
 
 Vue.use(ElementUI)

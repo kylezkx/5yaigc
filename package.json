@@ -9,12 +9,20 @@
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",
     "axios": "^1.6.8",
+    "base-64": "^1.0.0",
+    "bootstrap-vue": "^2.23.1",
     "core-js": "^3.8.3",
+    "crypto-js": "^4.2.0",
     "element-ui": "^2.15.14",
+    "js-base64": "^3.7.7",
+    "js-cookie": "^3.0.5",
     "js-md5": "^0.8.3",
+    "standardized-audio-context": "^25.3.70",
+    "utf8": "^3.0.0",
     "vue": "^2.6.14",
     "vue-router": "^3.5.1",
-    "vuex": "^3.6.2"
+    "vuex": "^3.6.2",
+    "websocket": "^1.0.34"
   },
   "devDependencies": {
     "@vue/cli-plugin-babel": "~5.0.0",
